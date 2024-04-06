@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import time
 import mlflow.pytorch
+import os
 import torch as t
 import random
 
@@ -16,6 +17,7 @@ from gpt_mod import GPT2LMHeadModel_MixtureOfDepths
 from utils import model_stats
 
 MODEL_ALIASES = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
+EXPERIMENT_DIR = os.getenv("EXPERIMENT_DIR")
 
 logger = logging.getLogger("__name__")
 
@@ -29,10 +31,8 @@ random.seed(seed)
 @dataclass
 class Parameters:
     batch_size: int = 32
-    batch_size_dataset_loader: int = 32
+    capacity_fraction: float = 0.125
     epochs: int = 10
-    experiment_name: str = "/Users/inwaves@live.com/{0}"
-    mod_capacity_budget: float = 0.125
 
 def preprocess_data(batch, tokeniser):
     texts = [item['text'] for item in batch]  # Extracting text data from the batch
@@ -50,9 +50,10 @@ def preprocess_data(batch, tokeniser):
 
 def setup():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--model", type=str, help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl.", default="gpt2")
-    parser.add_argument("-c", "--capacity", type=float, help="Model capacity as fraction of total; float in [0, 1].")
     parser.add_argument("-b", "--batch_size", type=int, help="Training batch size.")
+    parser.add_argument("-c", "--capacity_fraction", type=float, help="Model capacity as fraction of total; float in [0, 1].")
+    parser.add_argument("-e", "--epochs", type=int, help="Training batch size.")
+    parser.add_argument("-m", "--model", type=str, help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl.", default="gpt2")
     args = parser.parse_args()
 
     if is_mod:
@@ -76,7 +77,7 @@ def setup():
 
 
 def train_loop(model, tokeniser, optimizer, dataloader, selected_model):
-    mlflow.set_experiment(Parameters.experiment_name.format(selected_model))
+    mlflow.set_experiment(EXPERIMENT_DIR + selected_model)
 
     start_time = time.time()
     for epoch in range(Parameters.epochs):
@@ -110,6 +111,7 @@ def log_parameters_and_artifacts(model):
     mlflow.log_artifact("model_summary.txt")
 
 def train(model_name, is_mod):
+    # TODO: do we need two functions here?
     log_parameters_and_artifacts(model)
 
     mlflow.end_run()
