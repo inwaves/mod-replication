@@ -18,9 +18,9 @@ $HOME/miniconda3/bin/conda init
 # Close and reopen your shell or source the profile to make 'conda' available
 source ~/.bashrc
 
-# Create a new conda environment with Python 3.10
-$HOME/miniconda3/bin/conda create -n mod python=3.10 -y
+# Use the environment.yml to create the Conda environment
+$HOME/miniconda3/bin/conda env create -f env.yml
 
 # Activate the newly created environment
-# NOTE: This might not work until you open a new shell or source your profile again due to the way conda init modifies the shell initialization scripts.
-# $HOME/miniconda3/bin/conda activate .venv
+# Ensure this command is run in a new shell or after re-sourcing your .bashrc
+# conda activate mod
