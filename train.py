@@ -1,23 +1,18 @@
 from transformers import AutoConfig, AutoTokenizer, GPT2LMHeadModel
+from utils import model_stats
 
-model_aliases = {
-    "GPT2_SMALL": "gpt2", 
-    "GPT2_MEDIUM": "gpt2-medium", 
-    "GPT2_LARGE": "gpt2-large", 
-    "GPT2_XL": "gpt2-xl"
-}
+model_aliases = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
 
-tokenisers = []
-models = []
-for model, alias in model_aliases.items():
+tokenisers = {}
+models = {}
+for alias in model_aliases:
     tokenizer = AutoTokenizer.from_pretrained(alias)
     model_config = AutoConfig.from_pretrained(alias)
 
     language_model = GPT2LMHeadModel(model_config)
 
-    tokenisers += [tokenizer]
-    models += [language_model]
+    tokenisers[alias] = tokenizer
+    models[alias] = language_model
 
-print(f"I initialised {len(tokenisers)} tokenisers and {len(models)} models...")
-print(tokenisers)
-print(models)
+    num_params, total_size = model_stats(language_model)
+    print(f"Initialised model: {alias}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
