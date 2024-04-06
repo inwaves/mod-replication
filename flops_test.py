@@ -106,7 +106,7 @@ if __name__ == "__main__":
         tokenizer, model = load_model(model_alias)
         row = log_model_flops(model, tokenizer, model_alias)
         table_results.append(row)
-    create_md_table(table_results).
+    create_md_table(table_results)
 
 
     
