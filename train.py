@@ -34,13 +34,13 @@ class Parameters:
     experiment_name: str = "/Users/inwaves@live.com/{0}"
     mod_capacity_budget: float = 0.125
 
-def collate_fn(batch, tokenizer):
+def preprocess_data(batch, tokeniser):
     texts = [item['text'] for item in batch]  # Extracting text data from the batch
 
     # Tokenize the text data
-    batch_encoding = tokenizer(texts, padding=True, truncation=True, max_length=1024, return_tensors="pt")
+    batch_encoding = tokeniser(texts, padding=True, truncation=True, max_length=1024, return_tensors="pt")
 
-    # You no longer need to manually pad or convert lists to tensors since the tokenizer does this for you
+    # You no longer need to manually pad or convert lists to tensors since the tokeniser does this for you
     return {
         "input_ids": batch_encoding['input_ids'],
         "attention_mask": batch_encoding['attention_mask'],
@@ -50,8 +50,9 @@ def collate_fn(batch, tokenizer):
 
 def setup():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--model", type=str, help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl", default="gpt2")
-    parser.add_argument("-c", "--capacity", type=float, help="Model capacity as fraction of total; float in [0, 1]")
+    parser.add_argument("-m", "--model", type=str, help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl.", default="gpt2")
+    parser.add_argument("-c", "--capacity", type=float, help="Model capacity as fraction of total; float in [0, 1].")
+    parser.add_argument("-b", "--batch_size", type=int, help="Training batch size.")
     args = parser.parse_args()
 
     if is_mod:
@@ -63,25 +64,25 @@ def setup():
 
     num_params, total_size = model_stats(model)
     logger.info(f"Initialised model: {model_alias}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
-
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-    tokenizer.pad_token = tokenizer.eos_token
+    tokeniser = AutoTokenizer.from_pretrained(args.model)
+    tokeniser.pad_token = tokeniser.eos_token
 
     optimizer = t.optim.AdamW(model.parameters(), lr=5e-5)
     iterable_dataset = load_dataset("allenai/c4", "en", streaming=True, split="train")
-    dataloader = DataLoader(iterable_dataset, batch_size=Parameters.batch_size_dataset_loader, collate_fn=collate_fn)
 
-    return model, tokenizer, optimizer, dataloader
+    dataloader = DataLoader(iterable_dataset, batch_size=args.batch_size)
+
+    return model, tokeniser, optimizer, dataloader
 
 
-def train_loop(model, tokenizer, optimizer, dataloader, selected_model):
+def train_loop(model, tokeniser, optimizer, dataloader, selected_model):
     mlflow.set_experiment(Parameters.experiment_name.format(selected_model))
 
     start_time = time.time()
     for epoch in range(Parameters.epochs):
         model.train()
         for step, batch in enumerate(dataloader):
-            # inputs = tokenizer(data['text'], return_tensors="pt", padding=True, truncation=True, max_length=1024)
+            batch = preprocess_data(batch, tokeniser)
 
             input_ids = batch["input_ids"].to("cuda")
             attention_mask = batch["attention_mask"].to("cuda")
@@ -113,12 +114,12 @@ def train(model_name, is_mod):
 
     mlflow.end_run()
     with mlflow.start_run() as run:
-        train_loop(model, tokenizer, optimizer, dataloader, model_name)
+        train_loop(model, tokeniser, optimizer, dataloader, model_name)
     mlflow.pytorch.log_model(model, "model")
 
 
 def main():
-    model, tokenizer, optimizer, dataloader = setup()
+    model, tokeniser, optimizer, dataloader = setup()
     train(model)
     
 if __name__ == "__main__":
