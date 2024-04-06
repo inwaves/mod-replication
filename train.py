@@ -19,6 +19,7 @@ from utils import model_stats
 MODEL_ALIASES = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
 EXPERIMENT_DIR = os.getenv("EXPERIMENT_DIR")
 
+device = "cuda" if t.cuda.is_available() else "cpu"
 logger = logging.getLogger("__name__")
 
 seed = 42
@@ -54,6 +55,7 @@ def setup():
     parser.add_argument("-c", "--capacity_fraction", type=float, help="Model capacity as fraction of total; float in [0, 1].")
     parser.add_argument("-e", "--epochs", type=int, help="Training batch size.")
     parser.add_argument("-m", "--model", type=str, help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl.", default="gpt2")
+    parser.add_argument("-l", "--log_every_n_steps", type=int, help="How often should we log?")
     args = parser.parse_args()
 
     if is_mod:
@@ -63,21 +65,22 @@ def setup():
         config = GPT2Config()
         model = GPT2LMHeadModel(config)
 
+    model.to(device)
     num_params, total_size = model_stats(model)
     logger.info(f"Initialised model: {model_alias}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
     tokeniser = AutoTokenizer.from_pretrained(args.model)
     tokeniser.pad_token = tokeniser.eos_token
 
-    optimizer = t.optim.AdamW(model.parameters(), lr=5e-5)
+    optimiser = t.optim.AdamW(model.parameters(), lr=5e-5)
     iterable_dataset = load_dataset("allenai/c4", "en", streaming=True, split="train")
 
     dataloader = DataLoader(iterable_dataset, batch_size=args.batch_size)
 
-    return model, tokeniser, optimizer, dataloader
+    return model, tokeniser, optimiser, dataloader, args
 
 
-def train_loop(model, tokeniser, optimizer, dataloader, selected_model):
-    mlflow.set_experiment(EXPERIMENT_DIR + selected_model)
+def train_loop(model, tokeniser, optimiser, dataloader, args):
+    mlflow.set_experiment(EXPERIMENT_DIR + model_name)
 
     start_time = time.time()
     for epoch in range(Parameters.epochs):
@@ -85,20 +88,20 @@ def train_loop(model, tokeniser, optimizer, dataloader, selected_model):
         for step, batch in enumerate(dataloader):
             batch = preprocess_data(batch, tokeniser)
 
-            input_ids = batch["input_ids"].to("cuda")
-            attention_mask = batch["attention_mask"].to("cuda")
-            labels = batch["input_ids"].to("cuda")
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            labels = batch["input_ids"].to(device)
 
-            optimizer.zero_grad()
+            optimiser.zero_grad()
             outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
             loss = outputs.loss
             loss.backward()
-            optimizer.step()
+            optimiser.step()
 
             mlflow.log_metric("loss", loss.item())
             mlflow.log_metric("perplexity", t.exp(loss).item())
 
-            if step % 100 == 0:
+            if step % args.log_every_n_steps == 0:
                 mlflow.log_metric("loss", loss.item(), step=step)
                 duration = time.time() - start_time
                 mlflow.log_metric("duration", duration, step=step)
@@ -110,19 +113,19 @@ def log_parameters_and_artifacts(model):
         f.write(str(summary(model)))
     mlflow.log_artifact("model_summary.txt")
 
-def train(model_name, is_mod):
+def train(model, tokeniser, optimiser, dataloader, model_name):
     # TODO: do we need two functions here?
     log_parameters_and_artifacts(model)
 
     mlflow.end_run()
     with mlflow.start_run() as run:
-        train_loop(model, tokeniser, optimizer, dataloader, model_name)
+        train_loop(model, tokeniser, optimiser, dataloader, model_name)
     mlflow.pytorch.log_model(model, "model")
 
 
 def main():
-    model, tokeniser, optimizer, dataloader = setup()
-    train(model)
+    model, tokeniser, optimiser, dataloader, args = setup()
+    train(model, tokeniser, optimiser, dataloader, model_name)
     
 if __name__ == "__main__":
     main()
