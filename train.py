@@ -55,7 +55,7 @@ def setup():
     parser.add_argument("-c", "--capacity_fraction", type=float, help="Model capacity as fraction of total; float in [0, 1].")
     parser.add_argument("-e", "--epochs", type=int, help="Training batch size.")
     parser.add_argument("-m", "--model", type=str, help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl.", default="gpt2")
-    parser.add_argument("-l", "--log_every_n_steps", type=int, help="How often should we log?")
+    parser.add_argument("-l", "--log_every_n_steps", type=int, help="How often should we log?", default=100)
     args = parser.parse_args()
 
     if is_mod:
