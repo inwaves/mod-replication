@@ -1,23 +1,24 @@
-from dataclasses import dataclass
-import time
-from torchinfo import summary
-import mlflow.pytorch
-from datasets import load_dataset
-from torch.utils.data import DataLoader
-import torch as t
-from torch.nn import CrossEntropyLoss
-
-from transformers import AutoTokenizer, GPT2LMHeadModel
-from utils import model_stats
-
-import torch
 import numpy as np
+import time
+import mlflow.pytorch
+import torch as t
 import random
 
+from dataclasses import dataclass
+from datasets import load_dataset
+from transformers import AutoTokenizer, GPT2LMHeadModel
+from torch.nn import CrossEntropyLoss
+from torch.utils.data import DataLoader
+from torchinfo import summary
+from gpt_mod import GPT2LMHeadModel_MixtureOfDepths
+from utils import model_stats
+
+
 seed = 42
-torch.manual_seed(seed)
+t.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
+
 
 @dataclass
 class Parameters:
@@ -28,28 +29,22 @@ class Parameters:
     mod_capacity_budget: float = 0.125
 
 
-
 def load_model(model_alias, is_mod):
-    global TOKENIZER 
-    if is_mod:
-        #! todo
-        pass
-    else:
-        TOKENIZER = AutoTokenizer.from_pretrained(model_alias)
-        TOKENIZER.pad_token = TOKENIZER.eos_token
-        model = GPT2LMHeadModel.from_pretrained(model_alias)
-        optimizer = t.optim.AdamW(model.parameters(), lr=5e-5)
+    tokenizer = AutoTokenizer.from_pretrained(model_alias)
+    tokenizer.pad_token = tokenizer.eos_token
+    model = GPT2LMHeadModel_MixtureOfDepths() if is_mod else GPT2LMHeadModel()
 
+    optimizer = t.optim.AdamW(model.parameters(), lr=5e-5)
     num_params, total_size = model_stats(model)
     print(f"Initialised model: {model_alias}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
 
-    return model, TOKENIZER, optimizer
+    return model, tokenizer, optimizer
 
-def collate_fn(batch):
+def collate_fn(batch, tokenizer):
     texts = [item['text'] for item in batch]  # Extracting text data from the batch
 
     # Tokenize the text data
-    batch_encoding = TOKENIZER(texts, padding=True, truncation=True, max_length=1024, return_tensors="pt")
+    batch_encoding = tokenizer(texts, padding=True, truncation=True, max_length=1024, return_tensors="pt")
 
     # You no longer need to manually pad or convert lists to tensors since the tokenizer does this for you
     return {
