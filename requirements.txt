@@ -1,2 +1,4 @@
 torch
 mlflow
+databricks-cli
+chardet
