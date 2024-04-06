@@ -1,3 +1,5 @@
+import argparse
+import logging
 import numpy as np
 import time
 import mlflow.pytorch
@@ -6,13 +8,16 @@ import random
 
 from dataclasses import dataclass
 from datasets import load_dataset
-from transformers import AutoTokenizer, GPT2LMHeadModel
+from transformers import AutoTokenizer, GPT2LMHeadModel, GPT2Config
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from torchinfo import summary
 from gpt_mod import GPT2LMHeadModel_MixtureOfDepths
 from utils import model_stats
 
+MODEL_ALIASES = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
+
+logger = logging.getLogger("__name__")
 
 seed = 42
 t.manual_seed(seed)
@@ -20,6 +25,7 @@ np.random.seed(seed)
 random.seed(seed)
 
 
+# TODO: merge this & cl args
 @dataclass
 class Parameters:
     batch_size: int = 32
@@ -27,18 +33,6 @@ class Parameters:
     epochs: int = 10
     experiment_name: str = "/Users/inwaves@live.com/{0}"
     mod_capacity_budget: float = 0.125
-
-
-def load_model(model_alias, is_mod):
-    tokenizer = AutoTokenizer.from_pretrained(model_alias)
-    tokenizer.pad_token = tokenizer.eos_token
-    model = GPT2LMHeadModel_MixtureOfDepths() if is_mod else GPT2LMHeadModel()
-
-    optimizer = t.optim.AdamW(model.parameters(), lr=5e-5)
-    num_params, total_size = model_stats(model)
-    print(f"Initialised model: {model_alias}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
-
-    return model, tokenizer, optimizer
 
 def collate_fn(batch, tokenizer):
     texts = [item['text'] for item in batch]  # Extracting text data from the batch
@@ -52,10 +46,32 @@ def collate_fn(batch, tokenizer):
         "attention_mask": batch_encoding['attention_mask'],
         "labels": batch_encoding['input_ids'],  # Assuming you want to use the input IDs as labels for some sort of language modeling
     }
-def preprocess_data():
+
+
+def setup():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--model", type=str, help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl", default="gpt2")
+    parser.add_argument("-c", "--capacity", type=float, help="Model capacity as fraction of total; float in [0, 1]")
+    args = parser.parse_args()
+
+    if is_mod:
+        config = GPT2Config(capacity=args.capacity)
+        model = GPT2LMHeadModel_MixtureOfDepths()
+    else:
+        config = GPT2Config()
+        model = GPT2LMHeadModel(config)
+
+    num_params, total_size = model_stats(model)
+    logger.info(f"Initialised model: {model_alias}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    optimizer = t.optim.AdamW(model.parameters(), lr=5e-5)
     iterable_dataset = load_dataset("allenai/c4", "en", streaming=True, split="train")
     dataloader = DataLoader(iterable_dataset, batch_size=Parameters.batch_size_dataset_loader, collate_fn=collate_fn)
-    return dataloader
+
+    return model, tokenizer, optimizer, dataloader
 
 
 def train_loop(model, tokenizer, optimizer, dataloader, selected_model):
@@ -84,7 +100,7 @@ def train_loop(model, tokenizer, optimizer, dataloader, selected_model):
                 mlflow.log_metric("loss", loss.item(), step=step)
                 duration = time.time() - start_time
                 mlflow.log_metric("duration", duration, step=step)
-                print(f"Epoch: {epoch}/{Parameters.epochs}, Batch: {step}, {duration}, Loss: {loss.item()}")
+                logger.info(f"Epoch: {epoch}/{Parameters.epochs}, Batch: {step}, {duration}, Loss: {loss.item()}")
 
 def log_parameters_and_artifacts(model):
     mlflow.log_params(Parameters.__dict__)
@@ -92,23 +108,18 @@ def log_parameters_and_artifacts(model):
         f.write(str(summary(model)))
     mlflow.log_artifact("model_summary.txt")
 
-def train(selected_model, is_mod):
-
-    model, tokenizer, optimizer = load_model(selected_model, is_mod)
-    dataloader = preprocess_data()
+def train(model_name, is_mod):
     log_parameters_and_artifacts(model)
 
     mlflow.end_run()
     with mlflow.start_run() as run:
-        train_loop(model, tokenizer, optimizer, dataloader, selected_model)
+        train_loop(model, tokenizer, optimizer, dataloader, model_name)
     mlflow.pytorch.log_model(model, "model")
 
 
 def main():
-    model_aliases = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
-    selected_model = model_aliases[0]
-    is_mod = False
-    train(selected_model, is_mod)
+    model, tokenizer, optimizer, dataloader = setup()
+    train(model)
     
 if __name__ == "__main__":
     main()
