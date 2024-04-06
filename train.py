@@ -1,62 +1,83 @@
 from dataclasses import dataclass
-
+import time
 from torchinfo import summary
 import mlflow.pytorch
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 import torch as t
-from thop import profile
+from torch.nn import CrossEntropyLoss
 
-from transformers import AutoConfig, AutoTokenizer, GPT2LMHeadModel
-from torch.datasets import DataLoader
+from transformers import AutoTokenizer, GPT2LMHeadModel
 from utils import model_stats
+
+import torch
+import numpy as np
+import random
+
+seed = 42
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
 
 @dataclass
 class Parameters:
     batch_size: int = 32
     batch_size_dataset_loader: int = 32
     epochs: int = 10
-    experiment_name: str = "os.getenv("EXPERIMENT_DIR")"
+    experiment_name: str = "/Users/inwaves@live.com/{0}"
+    mod_capacity_budget: float = 0.125
 
 
 
-def load_models():
-    model_aliases = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
+def load_model(model_alias, is_mod):
+    global TOKENIZER 
+    if is_mod:
+        #! todo
+        pass
+    else:
+        TOKENIZER = AutoTokenizer.from_pretrained(model_alias)
+        TOKENIZER.pad_token = TOKENIZER.eos_token
+        model = GPT2LMHeadModel.from_pretrained(model_alias)
+        optimizer = t.optim.AdamW(model.parameters(), lr=5e-5)
 
-    tokenisers = {}
-    models = {}
-    for alias in model_aliases:
-        tokenizer = AutoTokenizer.from_pretrained(alias)
-        model_config = AutoConfig.from_pretrained(alias)
+    num_params, total_size = model_stats(model)
+    print(f"Initialised model: {model_alias}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
 
-        language_model = GPT2LMHeadModel(model_config)
+    return model, TOKENIZER, optimizer
 
-        tokenisers[alias] = tokenizer
-        models[alias] = language_model
+def collate_fn(batch):
+    texts = [item['text'] for item in batch]  # Extracting text data from the batch
 
-        num_params, total_size = model_stats(language_model)
-        print(f"Initialised model: {alias}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
+    # Tokenize the text data
+    batch_encoding = TOKENIZER(texts, padding=True, truncation=True, max_length=1024, return_tensors="pt")
 
-def create_model():
-    model = ""
-    optimizer = ""
-    return model, optimizer
-
+    # You no longer need to manually pad or convert lists to tensors since the tokenizer does this for you
+    return {
+        "input_ids": batch_encoding['input_ids'],
+        "attention_mask": batch_encoding['attention_mask'],
+        "labels": batch_encoding['input_ids'],  # Assuming you want to use the input IDs as labels for some sort of language modeling
+    }
 def preprocess_data():
     iterable_dataset = load_dataset("allenai/c4", "en", streaming=True, split="train")
-    dataloader = DataLoader(iterable_dataset, batch_size=Parameters.batch_size_dataset_loader, shuffle=True)
+    dataloader = DataLoader(iterable_dataset, batch_size=Parameters.batch_size_dataset_loader, collate_fn=collate_fn)
     return dataloader
 
 
-def train_loop(model, optimizer, dataloader, epochs, experiment_name):
-    mlflow.login()
-    mlflow.set_experiment(experiment_name)
+def train_loop(model, tokenizer, optimizer, dataloader, selected_model):
+    mlflow.set_experiment(Parameters.experiment_name.format(selected_model))
 
-    for epoch in range(epochs):
+    start_time = time.time()
+    for epoch in range(Parameters.epochs):
         model.train()
-        for batch_idx, (data, target) in enumerate(dataloader):
+        for step, batch in enumerate(dataloader):
+            # inputs = tokenizer(data['text'], return_tensors="pt", padding=True, truncation=True, max_length=1024)
+
+            input_ids = batch["input_ids"].to("cuda")
+            attention_mask = batch["attention_mask"].to("cuda")
+            labels = batch["input_ids"].to("cuda")
+
             optimizer.zero_grad()
-            outputs = model(data, target)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
             loss = outputs.loss
             loss.backward()
             optimizer.step()
@@ -64,8 +85,11 @@ def train_loop(model, optimizer, dataloader, epochs, experiment_name):
             mlflow.log_metric("loss", loss.item())
             mlflow.log_metric("perplexity", t.exp(loss).item())
 
-            if batch_idx % 100 == 0:
-                mlflow.log_metric("loss", loss.item(), step=(batch_idx // 100))
+            if step % 100 == 0:
+                mlflow.log_metric("loss", loss.item(), step=step)
+                duration = time.time() - start_time
+                mlflow.log_metric("duration", duration, step=step)
+                print(f"Epoch: {epoch}/{Parameters.epochs}, Batch: {step}, {duration}, Loss: {loss.item()}")
 
 def log_parameters_and_artifacts(model):
     mlflow.log_params(Parameters.__dict__)
@@ -73,18 +97,23 @@ def log_parameters_and_artifacts(model):
         f.write(str(summary(model)))
     mlflow.log_artifact("model_summary.txt")
 
-def train():
-    dataloader = preprocess_data(Parameters.batch_size)
-    model, optimizer = create_model()
+def train(selected_model, is_mod):
+
+    model, tokenizer, optimizer = load_model(selected_model, is_mod)
+    dataloader = preprocess_data()
     log_parameters_and_artifacts(model)
 
+    mlflow.end_run()
     with mlflow.start_run() as run:
-        train_loop(model, optimizer, dataloader, Parameters.epochs, Parameters.experiment_name)
+        train_loop(model, tokenizer, optimizer, dataloader, selected_model)
     mlflow.pytorch.log_model(model, "model")
 
 
 def main():
-    load_models()
+    model_aliases = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
+    selected_model = model_aliases[0]
+    is_mod = False
+    train(selected_model, is_mod)
     
 if __name__ == "__main__":
     main()
