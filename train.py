@@ -54,9 +54,9 @@ def setup():
     parser.add_argument("-l", "--log_every_n_steps", type=int, help="How often should we log?", default=100)
     args = parser.parse_args()
 
-    if args.is_mod:
-        config = GPT2Config(capacity=args.capacity)
-        model = GPT2LMHeadModel_MixtureOfDepths()
+    if args.use_mod:
+        config = GPT2Config(capacity_fraction=args.capacity_fraction)
+        model = GPT2LMHeadModel_MixtureOfDepths(config)
     else:
         config = GPT2Config()
         model = GPT2LMHeadModel(config)
@@ -115,7 +115,7 @@ def train(model, tokeniser, optimiser, dataloader, args):
 
     mlflow.end_run()
     with mlflow.start_run() as run:
-        train_loop(model, tokeniser, optimiser, dataloader, args.model)
+        train_loop(model, tokeniser, optimiser, dataloader, args)
     mlflow.pytorch.log_model(model, "model")
 
 
