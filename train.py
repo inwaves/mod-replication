@@ -46,7 +46,7 @@ def preprocess_data(batch, tokeniser):
 
 def setup():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-b", "--use_mod", type=bool, help="Use MoD")
+    parser.add_argument("-o", "--use_mod", type=bool, help="Use MoD")
     parser.add_argument("-b", "--batch_size", type=int, help="Training batch size.")
     parser.add_argument("-c", "--capacity_fraction", type=float, help="Model capacity as fraction of total; float in [0, 1].")
     parser.add_argument("-e", "--epochs", type=int, help="Training batch size.")
