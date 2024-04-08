@@ -46,7 +46,7 @@ def preprocess_data(batch, tokeniser):
 
 def setup():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-o", "--use_mod", type=bool, help="Use MoD")
+    parser.add_argument("-o", "--use_mod", type=bool, help="Use MoD", default=False)
     parser.add_argument("-b", "--batch_size", type=int, help="Training batch size.")
     parser.add_argument("-c", "--capacity_fraction", type=float, help="Model capacity as fraction of total; float in [0, 1].")
     parser.add_argument("-e", "--epochs", type=int, help="Training batch size.")
@@ -82,8 +82,6 @@ def train_loop(model, tokeniser, optimiser, dataloader, args):
     for epoch in range(args.epochs):
         model.train()
         for step, batch in enumerate(dataloader):
-            print(type(batch))
-            print(batch)
             batch = preprocess_data(batch, tokeniser)
 
             input_ids = batch["input_ids"].to(device)
