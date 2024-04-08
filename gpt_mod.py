@@ -22,8 +22,12 @@ class GPT2BlockMixtureOfDepths(nn.Module):
         self.router_weights = nn.Linear(hidden_size, hidden_size, bias=False)
 
         if config.add_cross_attention:
-            self.crossattention = attention_class(config=config, is_cross_attention=True, layer_idx=layer_idx)
-            self.ln_cross_attn = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
+            self.crossattention = attention_class(
+                config=config, is_cross_attention=True, layer_idx=layer_idx
+            )
+            self.ln_cross_attn = nn.LayerNorm(
+                hidden_size, eps=config.layer_norm_epsilon
+            )
 
         self.mlp = GPT2MLP(inner_dim, config)
 
@@ -37,11 +41,14 @@ class GPT2BlockMixtureOfDepths(nn.Module):
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
         use_cache: Optional[bool] = False,
         output_attentions: Optional[bool] = False,
-    ) -> Union[Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]]:
+    ) -> Union[
+        Tuple[torch.Tensor],
+        Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]],
+    ]:
         """Modified GPT2Block class which implements the mixture-of-depths trick.
 
         First, learned router weights are multiplied by the incoming hidden states. Then, we select
-        the top-k largest from these outputs, where k is the specified model capacity. k is always 
+        the top-k largest from these outputs, where k is the specified model capacity. k is always
         some percentage of the total sequence length – its intuition is "number of tokens that can
         participate in this block".
 
@@ -49,15 +56,17 @@ class GPT2BlockMixtureOfDepths(nn.Module):
         attention and MLP. The other, unselected tokens are rejoined to the updated tokens at the end
         of the forward function. The effect is that compute expended by the block is reduced, since
         not all tokens participate."""
-        
+
         hidden_state_copies = hidden_states.copy()
         router_outputs = self.router_weights(hidden_states)
-        topk_router_outputs, topk_router_indices = t.topk(router_outputs, self.capacity, 1)
+        topk_router_outputs, topk_router_indices = t.topk(
+            router_outputs, self.capacity, 1
+        )
         assert topk_router_indices.shape[1] == self.capacity
 
         selected_hidden_states = t.gather(hidden_state_copies, 1, topk_router_indices)
         hidden_states = self.ln_1(selected_hidden_states)
-        
+
         attn_outputs = self.attn(
             selected_hidden_states,
             layer_past=layer_past,
@@ -92,7 +101,9 @@ class GPT2BlockMixtureOfDepths(nn.Module):
             # residual connection
 
             hidden_states = residual + attn_output
-            outputs = outputs + cross_attn_outputs[2:]  # add cross attentions if we output attention weights
+            outputs = (
+                outputs + cross_attn_outputs[2:]
+            )  # add cross attentions if we output attention weights
 
         residual = hidden_states
         hidden_states = self.ln_2(hidden_states)
@@ -102,7 +113,9 @@ class GPT2BlockMixtureOfDepths(nn.Module):
         hidden_states = residual + feed_forward_hidden_states * topk_router_values
 
         # Updated selected states are rejoined with the non-selected states.
-        all_hidden_states = t.scatter(hidden_state_copies, 1, topk_router_indices, selected_hidden_states)
+        all_hidden_states = t.scatter(
+            hidden_state_copies, 1, topk_router_indices, selected_hidden_states
+        )
 
         if use_cache:
             outputs = (all_hidden_states,) + outputs
@@ -111,26 +124,32 @@ class GPT2BlockMixtureOfDepths(nn.Module):
 
         return outputs  # hidden_states, present, (attentions, cross_attentions)
 
+
 class GPT2LMHeadModel_MixtureOfDepths(GPT2LMHeadModel):
     def __init__(self, config):
         super().__init__(config)
 
         self.embed_dim = config.hidden_size
-        
+
         self.wte = nn.Embedding(config.vocab_size, self.embed_dim)
         self.wpe = nn.Embedding(config.max_position_embeddings, self.embed_dim)
 
         self.drop = nn.Dropout(config.embd_pdrop)
-        self.blocks = nn.ModuleList([GPT2BlockMixtureOfDepths(config, layer_idx=i) for i in range(config.num_hidden_layers)])
+        self.blocks = nn.ModuleList(
+            [
+                GPT2BlockMixtureOfDepths(config, layer_idx=i)
+                for i in range(config.num_hidden_layers)
+            ]
+        )
         self.layer_norm = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
 
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-        
+
         self.model_parallel = False
         self.device_map = None
         self.gradient_checkpointing = False
         self._attn_implementation = config._attn_implementation
-        
+
         self.post_init()
 
     def forward(
@@ -152,19 +171,20 @@ class GPT2LMHeadModel_MixtureOfDepths(GPT2LMHeadModel):
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
 
         transformer_outputs = super().forward(
-            input_ids, 
-            past_key_values, 
-            attention_mask, 
-            token_type_ids, 
-            position_ids, 
-            head_mask, 
-            inputs_embeds, 
-            encoder_hidden_states, 
+            input_ids,
+            past_key_values,
+            attention_mask,
+            token_type_ids,
+            position_ids,
+            head_mask,
+            inputs_embeds,
+            encoder_hidden_states,
             encoder_attention_mask,
             use_cache,
             output_attentions,
             output_hidden_states,
-            return_dict)
+            return_dict,
+        )
 
         hidden_states = transformer_outputs[0]
 
@@ -184,7 +204,9 @@ class GPT2LMHeadModel_MixtureOfDepths(GPT2LMHeadModel):
             shift_labels = labels[..., 1:].contiguous()
             # Flatten the tokens
             loss_fct = CrossEntropyLoss()
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+            loss = loss_fct(
+                shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1)
+            )
 
         if not return_dict:
             output = (lm_logits,) + transformer_outputs[1:]
@@ -199,6 +221,7 @@ class GPT2LMHeadModel_MixtureOfDepths(GPT2LMHeadModel):
             cross_attentions=transformer_outputs.cross_attentions,
         )
 
+
 class GPT2Attention(nn.Module):
     def __init__(self, config, is_cross_attention=False, layer_idx=None):
         super().__init__()
@@ -206,9 +229,9 @@ class GPT2Attention(nn.Module):
         max_positions = config.max_position_embeddings
         self.register_buffer(
             "bias",
-            torch.tril(torch.ones((max_positions, max_positions), dtype=torch.bool)).view(
-                1, 1, max_positions, max_positions
-            ),
+            torch.tril(
+                torch.ones((max_positions, max_positions), dtype=torch.bool)
+            ).view(1, 1, max_positions, max_positions),
             persistent=False,
         )
         self.register_buffer("masked_bias", torch.tensor(-1e4), persistent=False)
@@ -247,15 +270,21 @@ class GPT2Attention(nn.Module):
     def prune_heads(self, heads):
         if len(heads) == 0:
             return
-        heads, index = find_pruneable_heads_and_indices(heads, self.num_heads, self.head_dim, self.pruned_heads)
-        index_attn = torch.cat([index, index + self.split_size, index + (2 * self.split_size)])
+        heads, index = find_pruneable_heads_and_indices(
+            heads, self.num_heads, self.head_dim, self.pruned_heads
+        )
+        index_attn = torch.cat(
+            [index, index + self.split_size, index + (2 * self.split_size)]
+        )
 
         # Prune conv1d layers
         self.c_attn = prune_conv1d_layer(self.c_attn, index_attn, dim=1)
         self.c_proj = prune_conv1d_layer(self.c_proj, index, dim=0)
 
         # Update hyper params
-        self.split_size = (self.split_size // self.num_heads) * (self.num_heads - len(heads))
+        self.split_size = (self.split_size // self.num_heads) * (
+            self.num_heads - len(heads)
+        )
         self.num_heads = self.num_heads - len(heads)
         self.pruned_heads = self.pruned_heads.union(heads)
 
@@ -264,7 +293,10 @@ class GPT2Attention(nn.Module):
 
         if self.scale_attn_weights:
             attn_weights = attn_weights / torch.full(
-                [], value.size(-1) ** 0.5, dtype=attn_weights.dtype, device=attn_weights.device
+                [],
+                value.size(-1) ** 0.5,
+                dtype=attn_weights.dtype,
+                device=attn_weights.device,
             )
 
         # Layer-wise attention scaling
@@ -274,12 +306,18 @@ class GPT2Attention(nn.Module):
         if not self.is_cross_attention:
             # if only "normal" attention layer implements causal mask
             query_length, key_length = query.size(-2), key.size(-2)
-            causal_mask = self.bias[:, :, key_length - query_length : key_length, :key_length]
+            causal_mask = self.bias[
+                :, :, key_length - query_length : key_length, :key_length
+            ]
             mask_value = torch.finfo(attn_weights.dtype).min
             # Need to be a tensor, otherwise we get error: `RuntimeError: expected scalar type float but found double`.
             # Need to be on the same device, otherwise `RuntimeError: ..., x and y to be on the same device`
-            mask_value = torch.full([], mask_value, dtype=attn_weights.dtype, device=attn_weights.device)
-            attn_weights = torch.where(causal_mask, attn_weights.to(attn_weights.dtype), mask_value)
+            mask_value = torch.full(
+                [], mask_value, dtype=attn_weights.dtype, device=attn_weights.device
+            )
+            attn_weights = torch.where(
+                causal_mask, attn_weights.to(attn_weights.dtype), mask_value
+            )
 
         if attention_mask is not None:
             # Apply the attention mask
@@ -299,13 +337,21 @@ class GPT2Attention(nn.Module):
 
         return attn_output, attn_weights
 
-    def _upcast_and_reordered_attn(self, query, key, value, attention_mask=None, head_mask=None):
+    def _upcast_and_reordered_attn(
+        self, query, key, value, attention_mask=None, head_mask=None
+    ):
         # Use `torch.baddbmm` (a bit more efficient w/ alpha param for scaling -- from Megatron-LM)
         bsz, num_heads, q_seq_len, dk = query.size()
         _, _, k_seq_len, _ = key.size()
 
         # Preallocate attn_weights for `baddbmm`
-        attn_weights = torch.empty(bsz * num_heads, q_seq_len, k_seq_len, dtype=torch.float32, device=query.device)
+        attn_weights = torch.empty(
+            bsz * num_heads,
+            q_seq_len,
+            k_seq_len,
+            dtype=torch.float32,
+            device=query.device,
+        )
 
         # Compute Scale Factor
         scale_factor = 1.0
@@ -317,18 +363,26 @@ class GPT2Attention(nn.Module):
 
         # Upcast (turn off autocast) and reorder (Scale K by 1 / root(dk))
         with autocast(enabled=False):
-            q, k = query.reshape(-1, q_seq_len, dk), key.transpose(-1, -2).reshape(-1, dk, k_seq_len)
-            attn_weights = torch.baddbmm(attn_weights, q.float(), k.float(), beta=0, alpha=scale_factor)
+            q, k = query.reshape(-1, q_seq_len, dk), key.transpose(-1, -2).reshape(
+                -1, dk, k_seq_len
+            )
+            attn_weights = torch.baddbmm(
+                attn_weights, q.float(), k.float(), beta=0, alpha=scale_factor
+            )
             attn_weights = attn_weights.reshape(bsz, num_heads, q_seq_len, k_seq_len)
 
         if not self.is_cross_attention:
             # if only "normal" attention layer implements causal mask
             query_length, key_length = query.size(-2), key.size(-2)
-            causal_mask = self.bias[:, :, key_length - query_length : key_length, :key_length]
+            causal_mask = self.bias[
+                :, :, key_length - query_length : key_length, :key_length
+            ]
             mask_value = torch.finfo(attn_weights.dtype).min
             # Need to be a tensor, otherwise we get error: `RuntimeError: expected scalar type float but found double`.
             # Need to be on the same device, otherwise `RuntimeError: ..., x and y to be on the same device`
-            mask_value = torch.tensor(mask_value, dtype=attn_weights.dtype).to(attn_weights.device)
+            mask_value = torch.tensor(mask_value, dtype=attn_weights.dtype).to(
+                attn_weights.device
+            )
             attn_weights = torch.where(causal_mask, attn_weights, mask_value)
 
         if attention_mask is not None:
@@ -339,7 +393,9 @@ class GPT2Attention(nn.Module):
 
         # Downcast (if necessary) back to V's dtype (if in mixed-precision) -- No-Op if otherwise
         if attn_weights.dtype != torch.float32:
-            raise RuntimeError("Error with upcasting, attn_weights does not have dtype torch.float32")
+            raise RuntimeError(
+                "Error with upcasting, attn_weights does not have dtype torch.float32"
+            )
         attn_weights = attn_weights.type(value.dtype)
         attn_weights = self.attn_dropout(attn_weights)
 
@@ -386,7 +442,9 @@ class GPT2Attention(nn.Module):
                 )
 
             query = self.q_attn(hidden_states)
-            key, value = self.c_attn(encoder_hidden_states).split(self.split_size, dim=2)
+            key, value = self.c_attn(encoder_hidden_states).split(
+                self.split_size, dim=2
+            )
             attention_mask = encoder_attention_mask
         else:
             query, key, value = self.c_attn(hidden_states).split(self.split_size, dim=2)
@@ -406,9 +464,13 @@ class GPT2Attention(nn.Module):
             present = None
 
         if self.reorder_and_upcast_attn:
-            attn_output, attn_weights = self._upcast_and_reordered_attn(query, key, value, attention_mask, head_mask)
+            attn_output, attn_weights = self._upcast_and_reordered_attn(
+                query, key, value, attention_mask, head_mask
+            )
         else:
-            attn_output, attn_weights = self._attn(query, key, value, attention_mask, head_mask)
+            attn_output, attn_weights = self._attn(
+                query, key, value, attention_mask, head_mask
+            )
 
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
         attn_output = self.c_proj(attn_output)
@@ -456,7 +518,9 @@ class GPT2FlashAttention2(GPT2Attention):
                 )
 
             query = self.q_attn(hidden_states)
-            key, value = self.c_attn(encoder_hidden_states).split(self.split_size, dim=2)
+            key, value = self.c_attn(encoder_hidden_states).split(
+                self.split_size, dim=2
+            )
             attention_mask = encoder_attention_mask
         else:
             query, key, value = self.c_attn(hidden_states).split(self.split_size, dim=2)
@@ -480,7 +544,9 @@ class GPT2FlashAttention2(GPT2Attention):
 
         # Flash attention requires the input to have the shape
         # batch_size x seq_length x head_dim x hidden_dim
-        query = query.transpose(1, 2).view(bsz, query_length, self.num_heads, self.head_dim)
+        query = query.transpose(1, 2).view(
+            bsz, query_length, self.num_heads, self.head_dim
+        )
         key = key.transpose(1, 2).view(bsz, tgt_len, self.num_heads, self.head_dim)
         value = value.transpose(1, 2).view(bsz, tgt_len, self.num_heads, self.head_dim)
 
@@ -515,7 +581,9 @@ class GPT2FlashAttention2(GPT2Attention):
             query, key, value, attention_mask, query_length, dropout=attn_dropout
         )
 
-        attn_weights_reshaped = attn_output.reshape(bsz, query_length, self.num_heads * self.head_dim)
+        attn_weights_reshaped = attn_output.reshape(
+            bsz, query_length, self.num_heads * self.head_dim
+        )
         attn_output = self.c_proj(attn_weights_reshaped)
         attn_output = self.resid_dropout(attn_output)
 
@@ -527,7 +595,14 @@ class GPT2FlashAttention2(GPT2Attention):
 
     # Copied from transformers.models.llama.modeling_llama.LlamaFlashAttention2._flash_attention_forward
     def _flash_attention_forward(
-        self, query_states, key_states, value_states, attention_mask, query_length, dropout=0.0, softmax_scale=None
+        self,
+        query_states,
+        key_states,
+        value_states,
+        attention_mask,
+        query_length,
+        dropout=0.0,
+        softmax_scale=None,
     ):
         """
         Calls the forward method of Flash Attention - if the input hidden states contain at least one padding token
@@ -557,7 +632,14 @@ class GPT2FlashAttention2(GPT2Attention):
         # Contains at least one padding token in the sequence
         if attention_mask is not None:
             batch_size = query_states.shape[0]
-            query_states, key_states, value_states, indices_q, cu_seq_lens, max_seq_lens = self._upad_input(
+            (
+                query_states,
+                key_states,
+                value_states,
+                indices_q,
+                cu_seq_lens,
+                max_seq_lens,
+            ) = self._upad_input(
                 query_states, key_states, value_states, attention_mask, query_length
             )
 
@@ -577,28 +659,40 @@ class GPT2FlashAttention2(GPT2Attention):
                 causal=causal,
             )
 
-            attn_output = pad_input(attn_output_unpad, indices_q, batch_size, query_length)
+            attn_output = pad_input(
+                attn_output_unpad, indices_q, batch_size, query_length
+            )
         else:
             attn_output = flash_attn_func(
-                query_states, key_states, value_states, dropout, softmax_scale=softmax_scale, causal=causal
+                query_states,
+                key_states,
+                value_states,
+                dropout,
+                softmax_scale=softmax_scale,
+                causal=causal,
             )
 
         return attn_output
 
     # Copied from transformers.models.llama.modeling_llama.LlamaFlashAttention2._upad_input
-    def _upad_input(self, query_layer, key_layer, value_layer, attention_mask, query_length):
+    def _upad_input(
+        self, query_layer, key_layer, value_layer, attention_mask, query_length
+    ):
         indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(attention_mask)
         batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
 
         key_layer = index_first_axis(
-            key_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim), indices_k
+            key_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim),
+            indices_k,
         )
         value_layer = index_first_axis(
-            value_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim), indices_k
+            value_layer.reshape(batch_size * kv_seq_len, num_key_value_heads, head_dim),
+            indices_k,
         )
         if query_length == kv_seq_len:
             query_layer = index_first_axis(
-                query_layer.reshape(batch_size * kv_seq_len, self.num_heads, head_dim), indices_k
+                query_layer.reshape(batch_size * kv_seq_len, self.num_heads, head_dim),
+                indices_k,
             )
             cu_seqlens_q = cu_seqlens_k
             max_seqlen_in_batch_q = max_seqlen_in_batch_k
@@ -613,7 +707,9 @@ class GPT2FlashAttention2(GPT2Attention):
         else:
             # The -q_len: slice assumes left padding.
             attention_mask = attention_mask[:, -query_length:]
-            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(query_layer, attention_mask)
+            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(
+                query_layer, attention_mask
+            )
 
         return (
             query_layer,
@@ -624,10 +720,12 @@ class GPT2FlashAttention2(GPT2Attention):
             (max_seqlen_in_batch_q, max_seqlen_in_batch_k),
         )
 
+
 GPT2_ATTENTION_CLASSES = {
     "eager": GPT2Attention,
     "flash_attention_2": GPT2FlashAttention2,
 }
+
 
 class GPT2MLP(nn.Module):
     def __init__(self, intermediate_size, config):
@@ -638,7 +736,9 @@ class GPT2MLP(nn.Module):
         self.act = ACT2FN[config.activation_function]
         self.dropout = nn.Dropout(config.resid_pdrop)
 
-    def forward(self, hidden_states: Optional[Tuple[torch.FloatTensor]]) -> torch.FloatTensor:
+    def forward(
+        self, hidden_states: Optional[Tuple[torch.FloatTensor]]
+    ) -> torch.FloatTensor:
         hidden_states = self.c_fc(hidden_states)
         hidden_states = self.act(hidden_states)
         hidden_states = self.c_proj(hidden_states)

@@ -10,9 +10,11 @@ class GPT2Wrapper(nn.Module):
 
     def forward(self, input_ids, attention_mask=None):
         return self.model(input_ids, attention_mask=attention_mask)
+
     @property
     def transformer(self):
         return self.model.transformer
+
 
 class BlockWrapper(nn.Module):
     def __init__(self, block, embedding):
@@ -25,7 +27,8 @@ class BlockWrapper(nn.Module):
         x = self.embedding(input_ids)
         x = self.block(x)[0]
         return x
-    
+
+
 def load_model(model_name):
     config = AutoConfig.from_pretrained(model_name)
     # Initialize the tokenizer
@@ -34,12 +37,15 @@ def load_model(model_name):
     model = GPT2Wrapper(config)
     return tokenizer, model
 
+
 def log_model_flops(model, tokenizer, model_alias):
     inputs = tokenizer("I love hamsters.", return_tensors="pt")
     input_ids = inputs["input_ids"]
     attention_mask = inputs.get("attention_mask", None)
 
-    model_inputs = (input_ids,) if attention_mask is None else (input_ids, attention_mask)
+    model_inputs = (
+        (input_ids,) if attention_mask is None else (input_ids, attention_mask)
+    )
 
     flops = FlopCountAnalysis(model, model_inputs)
     total_flops = flops.total()
@@ -75,7 +81,9 @@ def log_model_flops(model, tokenizer, model_alias):
 
     total_flops_without_budget = num_blocks * block_flops + flops_other
     total_flops_without_budget_per_batch = total_flops_without_budget / batch_size
-    num_forward_passes_without_budget = flops_budget / total_flops_without_budget_per_batch
+    num_forward_passes_without_budget = (
+        flops_budget / total_flops_without_budget_per_batch
+    )
 
     return {
         "model": model_alias,
@@ -88,6 +96,7 @@ def log_model_flops(model, tokenizer, model_alias):
         "num_forward_passes": f"{int(num_forward_passes):,}",
     }
 
+
 def create_md_table(data):
     # Now print the table in a transposed format
     headers = ["Metric"] + [row["model"] for row in data]
@@ -97,8 +106,10 @@ def create_md_table(data):
         ["FLOPs for Standard Block"] + [row["block_flops"] for row in data],
         ["FLOPs for MOT Block"] + [row["flop_per_block_with_budget"] for row in data],
         ["FLOPs for All Non-Transformer Layers"] + [row["flops_other"] for row in data],
-        ["# of 32B Forward Passes w/o MOT"] + [row["num_forward_passes_without_budget"] for row in data],
-        ["# of 32B Forward Passes w/ MOT"] + [row["num_forward_passes"] for row in data],
+        ["# of 32B Forward Passes w/o MOT"]
+        + [row["num_forward_passes_without_budget"] for row in data],
+        ["# of 32B Forward Passes w/ MOT"]
+        + [row["num_forward_passes"] for row in data],
     ]
 
     # Formatting and printing the table
@@ -106,6 +117,7 @@ def create_md_table(data):
     print("|" + "|".join(["---"] * len(headers)) + "|")
     for row in rows:
         print("|" + "|".join(map(str, row)) + "|")
+
 
 if __name__ == "__main__":
     model_aliases = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
@@ -115,6 +127,3 @@ if __name__ == "__main__":
         row = log_model_flops(model, tokenizer, model_alias)
         table_results.append(row)
     create_md_table(table_results)
-
-
-    

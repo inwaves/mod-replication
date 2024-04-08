@@ -14,6 +14,7 @@ experiment_name = "os.getenv("EXPERIMENT_DIR")"
 mlflow.set_experiment(experiment_name)
 experiment = mlflow.get_experiment_by_name(experiment_name)
 
+
 # Define a synthetic dataset
 class SyntheticMNISTDataset(Dataset):
     def __init__(self, num_samples=100):
@@ -27,6 +28,7 @@ class SyntheticMNISTDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.data[idx], self.targets[idx]
+
 
 class MNISTModel(torch.nn.Module):
     def __init__(self):
@@ -60,6 +62,7 @@ model = MNISTModel()
 # Configure the optimizer
 optimizer = model.configure_optimizers()
 
+
 # Training loop
 def train(model, data_loader, optimizer, epochs=10):
     model.train()
@@ -70,10 +73,12 @@ def train(model, data_loader, optimizer, epochs=10):
             loss = output["loss"]
             loss.backward()
             optimizer.step()
-            
+
             # Optionally, log loss every 100 batches
             if batch_idx % 100 == 0:
-                print(f'Epoch: {epoch}/{epochs} Batch: {batch_idx} \tLoss: {loss.item()}')
+                print(
+                    f"Epoch: {epoch}/{epochs} Batch: {batch_idx} \tLoss: {loss.item()}"
+                )
                 mlflow.log_metric("loss", f"{loss:3f}", step=(batch_idx // 100))
 
 
@@ -98,7 +103,6 @@ with mlflow.start_run() as run:
     mlflow.pytorch.log_model(model, "model")
 
 
-
 def print_auto_logged_info(r):
     tags = {k: v for k, v in r.data.tags.items() if not k.startswith("mlflow.")}
     artifacts = [f.path for f in MlflowClient().list_artifacts(r.info.run_id, "model")]
@@ -107,6 +111,7 @@ def print_auto_logged_info(r):
     print(f"params: {r.data.params}")
     print(f"metrics: {r.data.metrics}")
     print(f"tags: {tags}")
+
 
 # Example of manually logging metrics after the run
 print_auto_logged_info(mlflow.get_run(run_id=run.info.run_id))
