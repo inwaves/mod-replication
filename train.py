@@ -13,9 +13,8 @@ from torchinfo import summary
 from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 
 from gpt_mod import GPT2LMHeadModel_MixtureOfDepths
-from utils import model_stats
+from utils import log_parameters_and_artifacts, model_stats, preprocess_data
 
-MODEL_ALIASES = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
 EXPERIMENT_DIR = os.getenv("EXPERIMENT_DIR")
 
 device = "cuda" if t.cuda.is_available() else "cpu"
@@ -27,24 +26,6 @@ seed = 42
 t.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
-
-
-def preprocess_data(batch, tokeniser):
-    texts = batch["text"]  # Extracting text data from the batch
-
-    # Tokenize the text data
-    batch_encoding = tokeniser(
-        texts, padding=True, truncation=True, max_length=1024, return_tensors="pt"
-    )
-
-    # You no longer need to manually pad or convert lists to tensors since the tokeniser does this for you
-    return {
-        "input_ids": batch_encoding["input_ids"],
-        "attention_mask": batch_encoding["attention_mask"],
-        "labels": batch_encoding[
-            "input_ids"
-        ],  # Assuming you want to use the input IDs as labels for some sort of language modeling
-    }
 
 
 def setup():
@@ -129,13 +110,6 @@ def train_loop(model, tokeniser, optimiser, dataloader, args):
                 logger.info(
                     f"Epoch: {epoch}/{args.epochs}, Batch: {step}, {duration}, Loss: {loss.item()}"
                 )
-
-
-def log_parameters_and_artifacts(model, args):
-    mlflow.log_params(args.__dict__)
-    with open("model_summary.txt", "w") as f:
-        f.write(str(summary(model)))
-    mlflow.log_artifact("model_summary.txt")
 
 
 def train(model, tokeniser, optimiser, dataloader, args):
