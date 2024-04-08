@@ -20,6 +20,8 @@ MODEL_ALIASES = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
 EXPERIMENT_DIR = os.getenv("EXPERIMENT_DIR")
 
 device = "cuda" if t.cuda.is_available() else "cpu"
+if device != "cuda":
+    raise ValueError("CUDA not available")
 logger = logging.getLogger("__name__")
 
 seed = 42
@@ -27,13 +29,6 @@ t.manual_seed(seed)
 np.random.seed(seed)
 random.seed(seed)
 
-
-# TODO: merge this & cl args
-@dataclass
-class Parameters:
-    batch_size: int = 32
-    capacity_fraction: float = 0.125
-    epochs: int = 10
 
 def preprocess_data(batch, tokeniser):
     texts = [item['text'] for item in batch]  # Extracting text data from the batch
@@ -51,14 +46,15 @@ def preprocess_data(batch, tokeniser):
 
 def setup():
     parser = argparse.ArgumentParser()
+    parser.add_argument("-b", "--use_mod", type=bool, help="Use MoD")
     parser.add_argument("-b", "--batch_size", type=int, help="Training batch size.")
     parser.add_argument("-c", "--capacity_fraction", type=float, help="Model capacity as fraction of total; float in [0, 1].")
     parser.add_argument("-e", "--epochs", type=int, help="Training batch size.")
-    parser.add_argument("-m", "--model", type=str, help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl.", default="gpt2")
+    parser.add_argument("-m", "--model", type=str, choices=["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"], help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl.", default="gpt2")
     parser.add_argument("-l", "--log_every_n_steps", type=int, help="How often should we log?", default=100)
     args = parser.parse_args()
 
-    if is_mod:
+    if args.is_mod:
         config = GPT2Config(capacity=args.capacity)
         model = GPT2LMHeadModel_MixtureOfDepths()
     else:
@@ -67,7 +63,7 @@ def setup():
 
     model.to(device)
     num_params, total_size = model_stats(model)
-    logger.info(f"Initialised model: {model_alias}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
+    logger.info(f"Initialised model: {args.model}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
     tokeniser = AutoTokenizer.from_pretrained(args.model)
     tokeniser.pad_token = tokeniser.eos_token
 
@@ -80,10 +76,10 @@ def setup():
 
 
 def train_loop(model, tokeniser, optimiser, dataloader, args):
-    mlflow.set_experiment(EXPERIMENT_DIR + model_name)
+    mlflow.set_experiment(EXPERIMENT_DIR + args.model)
 
     start_time = time.time()
-    for epoch in range(Parameters.epochs):
+    for epoch in range(args.epochs):
         model.train()
         for step, batch in enumerate(dataloader):
             batch = preprocess_data(batch, tokeniser)
@@ -105,27 +101,27 @@ def train_loop(model, tokeniser, optimiser, dataloader, args):
                 mlflow.log_metric("loss", loss.item(), step=step)
                 duration = time.time() - start_time
                 mlflow.log_metric("duration", duration, step=step)
-                logger.info(f"Epoch: {epoch}/{Parameters.epochs}, Batch: {step}, {duration}, Loss: {loss.item()}")
+                logger.info(f"Epoch: {epoch}/{args.epochs}, Batch: {step}, {duration}, Loss: {loss.item()}")
 
-def log_parameters_and_artifacts(model):
-    mlflow.log_params(Parameters.__dict__)
+def log_parameters_and_artifacts(model, args):
+    mlflow.log_params(args.__dict__)
     with open("model_summary.txt", "w") as f:
         f.write(str(summary(model)))
     mlflow.log_artifact("model_summary.txt")
 
-def train(model, tokeniser, optimiser, dataloader, model_name):
+def train(model, tokeniser, optimiser, dataloader, args):
     # TODO: do we need two functions here?
-    log_parameters_and_artifacts(model)
+    log_parameters_and_artifacts(model, args)
 
     mlflow.end_run()
     with mlflow.start_run() as run:
-        train_loop(model, tokeniser, optimiser, dataloader, model_name)
+        train_loop(model, tokeniser, optimiser, dataloader, args.model)
     mlflow.pytorch.log_model(model, "model")
 
 
 def main():
     model, tokeniser, optimiser, dataloader, args = setup()
-    train(model, tokeniser, optimiser, dataloader, model_name)
+    train(model, tokeniser, optimiser, dataloader, args)
     
 if __name__ == "__main__":
     main()
