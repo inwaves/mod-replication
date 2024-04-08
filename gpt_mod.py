@@ -1,5 +1,5 @@
-from transformers import GPT2PreTrainedModel
-from transformers.pytorch_utils import Conv1D
+from transformers import GPT2LMHeadModel
+from transformers.pytorch_utils import Conv1D, prune_conv1d_layer
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 from transformers.activations import ACT2FN
 from typing import Optional, Tuple, Union
@@ -109,7 +109,7 @@ class GPT2BlockMixtureOfDepths(nn.Module):
 
         return outputs  # hidden_states, present, (attentions, cross_attentions)
 
-class GPT2LMHeadModel_MixtureOfDepths(GPT2PreTrainedModel):
+class GPT2LMHeadModel_MixtureOfDepths(GPT2LMHeadModel):
     def __init__(self, config):
         super().__init__(config)
 
@@ -142,6 +142,7 @@ class GPT2LMHeadModel_MixtureOfDepths(GPT2PreTrainedModel):
         inputs_embeds: Optional[torch.FloatTensor] = None,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
