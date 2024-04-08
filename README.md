@@ -1,11 +1,13 @@
-# Replicating mixture-of-depths
-test
+# Mixture-of-depths replication
+
+This repo contains code to replicate the paper [Mixture-of-Depths: Dynamically allocating compute in transformer-based language models](https://arxiv.org/abs/2404.02258).
+
 
 # Setup
 
-1. Run `sh setup_miniconda.sh` to setup _conda_
-2. `conda activate .venv`
-3. `databricks configure --token` you need to configure your DBX URI and PAT in order to track model training with _mlflow_
+1. Run `sh setup_miniconda.sh` to setup `conda`
+2. `conda activate mod`
+3. `databricks configure --token` you need to configure your DBX URI and PAT in order to track model training with `mlflow`
 
 
 # Flops for GPT2 models
