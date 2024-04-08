@@ -1,11 +1,12 @@
 import os
+
+import mlflow.pytorch
 import torch
-from torchinfo import summary
+from mlflow import MlflowClient
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
+from torchinfo import summary
 from torchmetrics import Accuracy
-import mlflow.pytorch
-from mlflow import MlflowClient
 
 # Set the MLflow experiment
 mlflow.login()

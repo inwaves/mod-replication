@@ -1,10 +1,12 @@
-from transformers import GPT2LMHeadModel
-from transformers.pytorch_utils import Conv1D, prune_conv1d_layer
-from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
-from transformers.activations import ACT2FN
 from typing import Optional, Tuple, Union
-import torch.nn as nn
+
 import torch
+import torch.nn as nn
+from transformers import GPT2LMHeadModel
+from transformers.activations import ACT2FN
+from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
+from transformers.pytorch_utils import Conv1D, prune_conv1d_layer
+
 
 class GPT2BlockMixtureOfDepths(nn.Module):
     def __init__(self, config, layer_idx=None):

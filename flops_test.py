@@ -1,6 +1,6 @@
-from transformers import AutoConfig, GPT2LMHeadModel, GPT2Tokenizer
-from fvcore.nn import FlopCountAnalysis
 import torch.nn as nn
+from fvcore.nn import FlopCountAnalysis
+from transformers import AutoConfig, GPT2LMHeadModel, GPT2Tokenizer
 
 
 class GPT2Wrapper(nn.Module):
