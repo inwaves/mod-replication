@@ -3,11 +3,16 @@ from fvcore.nn import FlopCountAnalysis
 import torch.nn as nn
 
 
-class GPT2Wrapper(GPT2LMHeadModel):
-    def forward(self, input_ids, attention_mask=None):
-        # Call the original forward method with only input_ids and attention_mask
-        return super().forward(input_ids, attention_mask=attention_mask)
+class GPT2Wrapper(nn.Module):
+    def __init__(self, config):
+        super(GPT2Wrapper, self).__init__()
+        self.model = GPT2LMHeadModel(config)
 
+    def forward(self, input_ids, attention_mask=None):
+        return self.model(input_ids, attention_mask=attention_mask)
+    @property
+    def transformer(self):
+        return self.model.transformer
 
 class BlockWrapper(nn.Module):
     def __init__(self, block, embedding):
@@ -22,8 +27,11 @@ class BlockWrapper(nn.Module):
         return x
     
 def load_model(model_name):
+    config = AutoConfig.from_pretrained(model_name)
+    # Initialize the tokenizer
     tokenizer = GPT2Tokenizer.from_pretrained(model_name)
-    model = GPT2Wrapper.from_pretrained(model_name)
+    # Initialize the model with the given configuration
+    model = GPT2Wrapper(config)
     return tokenizer, model
 
 def log_model_flops(model, tokenizer, model_alias):
