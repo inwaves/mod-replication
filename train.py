@@ -31,7 +31,7 @@ random.seed(seed)
 
 
 def preprocess_data(batch, tokeniser):
-    texts = [item['text'] for item in batch]  # Extracting text data from the batch
+    texts = batch["text"]  # Extracting text data from the batch
 
     # Tokenize the text data
     batch_encoding = tokeniser(texts, padding=True, truncation=True, max_length=1024, return_tensors="pt")
@@ -82,6 +82,8 @@ def train_loop(model, tokeniser, optimiser, dataloader, args):
     for epoch in range(args.epochs):
         model.train()
         for step, batch in enumerate(dataloader):
+            print(type(batch))
+            print(batch)
             batch = preprocess_data(batch, tokeniser)
 
             input_ids = batch["input_ids"].to(device)
