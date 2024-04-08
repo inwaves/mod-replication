@@ -10,7 +10,7 @@ from torchmetrics import Accuracy
 
 # Set the MLflow experiment
 mlflow.login()
-experiment_name = "os.getenv("EXPERIMENT_DIR")"
+experiment_name = os.getenv("EXPERIMENT_DIR")
 mlflow.set_experiment(experiment_name)
 experiment = mlflow.get_experiment_by_name(experiment_name)
 
