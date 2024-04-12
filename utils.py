@@ -16,7 +16,7 @@ def preprocess_data(batch, tokeniser):
 
     # Tokenize the text data
     batch_encoding = tokeniser(
-        texts, padding=True, truncation=True, max_length=1024, return_tensors="pt"
+        texts, padding="max_length", truncation=True, return_tensors="pt"
     )
 
     # You no longer need to manually pad or convert lists to tensors since the tokeniser does this for you

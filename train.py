@@ -100,13 +100,12 @@ def train(model, tokeniser, optimiser, dataloader, args):
         for step, batch in tqdm(enumerate(dataloader)):
             batch = preprocess_data(batch, tokeniser)
 
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["input_ids"].to(device)
+            batch["input_ids"] = batch["input_ids"].to(device)
+            batch["attention_mask"] = batch["attention_mask"].to(device)
 
             optimiser.zero_grad()
             outputs = model(
-                input_ids=input_ids, attention_mask=attention_mask, labels=labels
+                input_ids=batch["input_ids"], attention_mask=batch["attention_mask"], labels=batch["input_ids"]
             )
             loss = outputs.loss
             loss.backward()
