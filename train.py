@@ -94,8 +94,9 @@ def setup():
 def train(model, tokeniser, optimiser, dataloader, args):
 
     start_time = time.time()
+    model.train()
+    
     for epoch in range(args.epochs):
-        model.train()
         for step, batch in tqdm(enumerate(dataloader)):
             batch = preprocess_data(batch, tokeniser)
 
