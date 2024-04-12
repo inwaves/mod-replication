@@ -35,12 +35,13 @@ random.seed(seed)
 def setup():
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--use_mod", type=bool, help="Use MoD", default=False)
-    parser.add_argument("-b", "--batch_size", type=int, help="Training batch size.")
+    parser.add_argument("-b", "--batch_size", type=int, help="Training batch size.", default=16)
     parser.add_argument(
         "-c",
         "--capacity_fraction",
         type=float,
         help="Model capacity as fraction of total; float in [0, 1].",
+        default=0.125,
     )
     parser.add_argument("-e", "--epochs", type=int, help="Training batch size.", default=10)
     parser.add_argument(
