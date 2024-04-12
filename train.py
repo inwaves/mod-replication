@@ -1,22 +1,20 @@
 import argparse
 import logging
-import numpy as np
-import time
-import mlflow.pytorch
 import os
-import torch as t
 import random
+import time
 
-from dataclasses import dataclass
+import mlflow.pytorch
+import numpy as np
+import torch as t
 from datasets import load_dataset
-from transformers import AutoTokenizer, GPT2LMHeadModel, GPT2Config
-from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from torchinfo import summary
-from gpt_mod import GPT2LMHeadModel_MixtureOfDepths
-from utils import model_stats
+from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 
-MODEL_ALIASES = ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
+from gpt_mod import GPT2LMHeadModel_MixtureOfDepths
+from utils import log_parameters_and_artifacts, model_stats, preprocess_data
+
 EXPERIMENT_DIR = os.getenv("EXPERIMENT_DIR")
 
 device = "cuda" if t.cuda.is_available() else "cpu"
@@ -30,28 +28,32 @@ np.random.seed(seed)
 random.seed(seed)
 
 
-def preprocess_data(batch, tokeniser):
-    texts = batch["text"]  # Extracting text data from the batch
-
-    # Tokenize the text data
-    batch_encoding = tokeniser(texts, padding=True, truncation=True, max_length=1024, return_tensors="pt")
-
-    # You no longer need to manually pad or convert lists to tensors since the tokeniser does this for you
-    return {
-        "input_ids": batch_encoding['input_ids'],
-        "attention_mask": batch_encoding['attention_mask'],
-        "labels": batch_encoding['input_ids'],  # Assuming you want to use the input IDs as labels for some sort of language modeling
-    }
-
-
 def setup():
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--use_mod", type=bool, help="Use MoD", default=False)
     parser.add_argument("-b", "--batch_size", type=int, help="Training batch size.")
-    parser.add_argument("-c", "--capacity_fraction", type=float, help="Model capacity as fraction of total; float in [0, 1].")
+    parser.add_argument(
+        "-c",
+        "--capacity_fraction",
+        type=float,
+        help="Model capacity as fraction of total; float in [0, 1].",
+    )
     parser.add_argument("-e", "--epochs", type=int, help="Training batch size.")
-    parser.add_argument("-m", "--model", type=str, choices=["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"], help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl.", default="gpt2")
-    parser.add_argument("-l", "--log_every_n_steps", type=int, help="How often should we log?", default=100)
+    parser.add_argument(
+        "-m",
+        "--model",
+        type=str,
+        choices=["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"],
+        help="Model name, one of: gpt2, gpt2-medium, gpt2-large, gpt2-xl.",
+        default="gpt2",
+    )
+    parser.add_argument(
+        "-l",
+        "--log_every_n_steps",
+        type=int,
+        help="How often should we log?",
+        default=100,
+    )
     args = parser.parse_args()
 
     if args.use_mod:
@@ -63,7 +65,9 @@ def setup():
 
     model.to(device)
     num_params, total_size = model_stats(model)
-    logger.info(f"Initialised model: {args.model}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB")
+    logger.info(
+        f"Initialised model: {args.model}, Number of parameters: {num_params/1e6}M, Total size: {total_size/1e6:.2f} MB"
+    )
     tokeniser = AutoTokenizer.from_pretrained(args.model)
     tokeniser.pad_token = tokeniser.eos_token
 
@@ -89,7 +93,9 @@ def train_loop(model, tokeniser, optimiser, dataloader, args):
             labels = batch["input_ids"].to(device)
 
             optimiser.zero_grad()
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            outputs = model(
+                input_ids=input_ids, attention_mask=attention_mask, labels=labels
+            )
             loss = outputs.loss
             loss.backward()
             optimiser.step()
@@ -101,13 +107,10 @@ def train_loop(model, tokeniser, optimiser, dataloader, args):
                 mlflow.log_metric("loss", loss.item(), step=step)
                 duration = time.time() - start_time
                 mlflow.log_metric("duration", duration, step=step)
-                logger.info(f"Epoch: {epoch}/{args.epochs}, Batch: {step}, {duration}, Loss: {loss.item()}")
+                logger.info(
+                    f"Epoch: {epoch}/{args.epochs}, Batch: {step}, {duration}, Loss: {loss.item()}"
+                )
 
-def log_parameters_and_artifacts(model, args):
-    mlflow.log_params(args.__dict__)
-    with open("model_summary.txt", "w") as f:
-        f.write(str(summary(model)))
-    mlflow.log_artifact("model_summary.txt")
 
 def train(model, tokeniser, optimiser, dataloader, args):
     # TODO: do we need two functions here?
@@ -122,6 +125,7 @@ def train(model, tokeniser, optimiser, dataloader, args):
 def main():
     model, tokeniser, optimiser, dataloader, args = setup()
     train(model, tokeniser, optimiser, dataloader, args)
-    
+
+
 if __name__ == "__main__":
     main()
