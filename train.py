@@ -38,7 +38,7 @@ def setup():
         type=float,
         help="Model capacity as fraction of total; float in [0, 1].",
     )
-    parser.add_argument("-e", "--epochs", type=int, help="Training batch size.")
+    parser.add_argument("-e", "--epochs", type=int, help="Training batch size.", default=10)
     parser.add_argument(
         "-m",
         "--model",
