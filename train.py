@@ -134,7 +134,7 @@ def main():
     with mlflow.start_run() as run:
         log_parameters_and_artifacts(model, args)
         train(model, tokeniser, optimiser, dataloader, args)
-    mlflow.pytorch.log_model(model, "model")
+    mlflow.log_model(model, "model")
 
 
 if __name__ == "__main__":
