@@ -30,7 +30,7 @@ def preprocess_data(batch, tokeniser):
 
 
 def log_parameters_and_artifacts(model, args):
-    mlflow.log_params(args.__dict__)
+    mlflow.log_params(vars(args))
     with open("model_summary.txt", "w") as f:
         f.write(str(summary(model)))
     mlflow.log_artifact("model_summary.txt")

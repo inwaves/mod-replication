@@ -11,12 +11,16 @@ from datasets import load_dataset
 from torch.utils.data import DataLoader
 from torchinfo import summary
 from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
+from tqdm import tqdm
 
 from gpt_mod import GPT2LMHeadModel_MixtureOfDepths
 from utils import log_parameters_and_artifacts, model_stats, preprocess_data
 
 EXPERIMENT_DIR = os.getenv("EXPERIMENT_DIR")
 
+mlflow.login()
+mlflow.set_tracking_uri("databricks")
+mlflow.set_experiment(EXPERIMENT_DIR)
 device = "cuda" if t.cuda.is_available() else "cpu"
 if device != "cuda":
     raise ValueError("CUDA not available")
@@ -52,7 +56,14 @@ def setup():
         "--log_every_n_steps",
         type=int,
         help="How often should we log?",
-        default=100,
+        default=50,
+    )
+    parser.add_argument(
+        "-t",
+        "--timeout_in_seconds",
+        type=int,
+        help="Training loop timeout in seconds, e.g. 1800s = stop after 30m",
+        default=600,
     )
     args = parser.parse_args()
 
@@ -79,13 +90,12 @@ def setup():
     return model, tokeniser, optimiser, dataloader, args
 
 
-def train_loop(model, tokeniser, optimiser, dataloader, args):
-    mlflow.set_experiment(EXPERIMENT_DIR + args.model)
+def train(model, tokeniser, optimiser, dataloader, args):
 
     start_time = time.time()
     for epoch in range(args.epochs):
         model.train()
-        for step, batch in enumerate(dataloader):
+        for step, batch in tqdm(enumerate(dataloader)):
             batch = preprocess_data(batch, tokeniser)
 
             input_ids = batch["input_ids"].to(device)
@@ -100,31 +110,30 @@ def train_loop(model, tokeniser, optimiser, dataloader, args):
             loss.backward()
             optimiser.step()
 
-            mlflow.log_metric("loss", loss.item())
-            mlflow.log_metric("perplexity", t.exp(loss).item())
+            mlflow.log_metric("loss", loss.item(), step=step)
 
             if step % args.log_every_n_steps == 0:
                 mlflow.log_metric("loss", loss.item(), step=step)
+                mlflow.log_metric("perplexity", t.exp(loss).item(), step=step)
                 duration = time.time() - start_time
                 mlflow.log_metric("duration", duration, step=step)
                 logger.info(
                     f"Epoch: {epoch}/{args.epochs}, Batch: {step}, {duration}, Loss: {loss.item()}"
                 )
 
-
-def train(model, tokeniser, optimiser, dataloader, args):
-    # TODO: do we need two functions here?
-    log_parameters_and_artifacts(model, args)
-
-    mlflow.end_run()
-    with mlflow.start_run() as run:
-        train_loop(model, tokeniser, optimiser, dataloader, args)
-    mlflow.pytorch.log_model(model, "model")
+            # Stop after timeout.
+            if time.time() - start_time > args.timeout_in_seconds:
+                break
 
 
 def main():
     model, tokeniser, optimiser, dataloader, args = setup()
-    train(model, tokeniser, optimiser, dataloader, args)
+
+    mlflow.end_run()
+    with mlflow.start_run() as run:
+        log_parameters_and_artifacts(model, args)
+        train(model, tokeniser, optimiser, dataloader, args)
+    mlflow.pytorch.log_model(model, "model")
 
 
 if __name__ == "__main__":
